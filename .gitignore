@@ -1,0 +1,43 @@
+# Laravel
+backend/.env
+backend/.env.local
+backend/.env.*.php
+backend/.DS_Store
+backend/Homestead.json
+backend/Homestead.yaml
+backend/vendor/
+backend/node_modules/
+backend/npm-debug.log
+backend/yarn-error.log
+backend/storage/logs/*
+backend/!storage/logs/.gitkeep
+backend/database/database.sqlite
+
+# React
+frontend-react/node_modules/
+frontend-react/build/
+frontend-react/dist/
+frontend-react/.env.local
+frontend-react/.env.development.local
+frontend-react/.env.test.local
+frontend-react/.env.production.local
+frontend-react/npm-debug.log*
+frontend-react/yarn-debug.log*
+frontend-react/yarn-error.log*
+
+# Angular
+frontend-angular/node_modules/
+frontend-angular/dist/
+frontend-angular/build/
+frontend-angular/.angular/cache/
+frontend-angular/.env.local
+
+# General
+.DS_Store
+*.log
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.env
