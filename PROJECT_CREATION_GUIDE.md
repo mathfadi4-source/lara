@@ -594,6 +594,7 @@ cd frontend-react
 # Install Tailwind CSS
 npm install -D tailwindcss postcss autoprefixer
 npx tailwindcss init -p
+npm i zustand
 
 # Dependencies are already included:
 # - react@^19.2.0
@@ -652,22 +653,22 @@ export interface ApiResponse<T> {
   data?: T;
 }
 
-export const productApi = {
-  async getAll(): Promise<Product[]> {
+export const productService = {
+  getAll: async (): Promise<Product[]> => {
     const response = await fetch(`${API_URL}/products`);
     const data: ApiResponse<Product[]> = await response.json();
     if (!data.success) throw new Error(data.message);
     return data.data || [];
   },
 
-  async getById(id: number): Promise<Product> {
+  getById: async (id: number): Promise<Product> => {
     const response = await fetch(`${API_URL}/products/${id}`);
     const data: ApiResponse<Product> = await response.json();
     if (!data.success) throw new Error(data.message);
     return data.data!;
   },
 
-  async create(product: Omit<Product, 'id' | 'created_at' | 'updated_at'>): Promise<Product> {
+  create: async (product: Omit<Product, 'id' | 'created_at' | 'updated_at'>): Promise<Product> => {
     const response = await fetch(`${API_URL}/products`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -678,7 +679,7 @@ export const productApi = {
     return data.data!;
   },
 
-  async update(id: number, product: Partial<Product>): Promise<Product> {
+  update: async (id: number, product: Partial<Omit<Product, 'id' | 'created_at' | 'updated_at'>>): Promise<Product> => {
     const response = await fetch(`${API_URL}/products/${id}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
@@ -689,111 +690,240 @@ export const productApi = {
     return data.data!;
   },
 
-  async delete(id: number): Promise<void> {
-    const response = await fetch(`${API_URL}/products/${id}`, {
-      method: 'DELETE',
-    });
-    const data: ApiResponse<null> = await response.json();
+  delete: async (id: number): Promise<void> => {
+    const response = await fetch(`${API_URL}/products/${id}`, { method: 'DELETE' });
+    const data: ApiResponse<void> = await response.json();
     if (!data.success) throw new Error(data.message);
   },
 };
 ```
+### 3.4 Create API store
 
+Create `frontend-react/src/store/productStore.ts`:
+
+```typescript
+import { create } from 'zustand';
+import { Product, productService } from '../services/api';
+
+export interface ProductState {
+  products: Product[];
+  selectedProduct: Product | null;
+  loading: boolean;
+  error: string | null;
+  
+  // Actions
+  fetchProducts: () => Promise<void>;
+  selectProduct: (product: Product | null) => void;
+  createProduct: (product: Omit<Product, 'id'>) => Promise<void>;
+  updateProduct: (id: number, product: Omit<Product, 'id'>) => Promise<void>;
+  deleteProduct: (id: number) => Promise<void>;
+  clearError: () => void;
+}
+
+export const useProductStore = create<ProductState>((set) => ({
+  products: [],
+  selectedProduct: null,
+  loading: false,
+  error: null,
+
+  fetchProducts: async () => {
+    set({ loading: true, error: null });
+    try {
+      const data = await productService.getAll();
+      set({ products: data, loading: false });
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to fetch products';
+      set({ error: errorMessage, loading: false });
+    }
+  },
+
+  selectProduct: (product) => {
+    set({ selectedProduct: product });
+  },
+
+  createProduct: async (product) => {
+    set({ loading: true, error: null });
+    try {
+      const created = await productService.create(product);
+      set((state) => ({
+        products: [...state.products, created],
+        selectedProduct: null,
+        loading: false,
+      }));
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to create product';
+      set({ error: errorMessage, loading: false });
+      throw err;
+    }
+  },
+
+  updateProduct: async (id, product) => {
+    set({ loading: true, error: null });
+    try {
+      const updated = await productService.update(id, product);
+      set((state) => ({
+        products: state.products.map((p) => (p.id === id ? updated : p)),
+        selectedProduct: null,
+        loading: false,
+      }));
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to update product';
+      set({ error: errorMessage, loading: false });
+      throw err;
+    }
+  },
+
+  deleteProduct: async (id) => {
+    set({ loading: true, error: null });
+    try {
+      await productService.delete(id);
+      set((state) => ({
+        products: state.products.filter((p) => p.id !== id),
+        selectedProduct: state.selectedProduct?.id === id ? null : state.selectedProduct,
+        loading: false,
+      }));
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to delete product';
+      set({ error: errorMessage, loading: false });
+      throw err;
+    }
+  },
+
+  clearError: () => {
+    set({ error: null });
+  },
+}));
+```
 ### 3.5 Create Components
 
 Create `frontend-react/src/components/ProductForm.tsx`:
 
 ```typescript
-import { useState } from 'react';
-import { Product, productApi } from '../services/api';
+import React, { useEffect, useState } from 'react';
+import { useProductStore } from '../store/productStore';
 
 interface ProductFormProps {
-  product?: Product;
+  productId: number | null;
   onSuccess: () => void;
 }
 
-export const ProductForm: React.FC<ProductFormProps> = ({ product, onSuccess }) => {
+export const ProductForm: React.FC<ProductFormProps> = ({ productId, onSuccess }) => {
   const [formData, setFormData] = useState({
-    name: product?.name || '',
-    description: product?.description || '',
-    price: product?.price.toString() || '',
-    quantity: product?.quantity.toString() || '',
+    name: '',
+    description: '',
+    price: '',
+    quantity: '',
   });
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
+  const [localError, setLocalError] = useState('');
+
+  const selectedProduct = useProductStore((state) => state.selectedProduct);
+  const loading = useProductStore((state) => state.loading);
+  const storeError = useProductStore((state) => state.error);
+  const createProduct = useProductStore((state) => state.createProduct);
+  const updateProduct = useProductStore((state) => state.updateProduct);
+  const selectProduct = useProductStore((state) => state.selectProduct);
+
+  useEffect(() => {
+    if (productId && selectedProduct) {
+      setFormData({
+        name: selectedProduct.name,
+        description: selectedProduct.description || '',
+        price: selectedProduct.price.toString(),
+        quantity: selectedProduct.quantity.toString(),
+      });
+    } else {
+      setFormData({ name: '', description: '', price: '', quantity: '' });
+    }
+  }, [productId, selectedProduct]);
+
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+    const { name, value } = e.target;
+    setFormData(prev => ({ ...prev, [name]: value }));
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setLoading(true);
-    setError('');
+    setLocalError('');
 
     try {
-      const payload = {
+      const data = {
         name: formData.name,
-        description: formData.description,
+        description: formData.description || null,
         price: parseFloat(formData.price),
         quantity: parseInt(formData.quantity),
-      };
+      } as any;
 
-      if (product) {
-        await productApi.update(product.id, payload);
+      if (productId && selectedProduct) {
+        await updateProduct(selectedProduct.id, data);
       } else {
-        await productApi.create(payload);
+        await createProduct(data);
       }
 
       setFormData({ name: '', description: '', price: '', quantity: '' });
+      selectProduct(null);
       onSuccess();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'An error occurred');
-    } finally {
-      setLoading(false);
+      setLocalError(err instanceof Error ? err.message : 'Failed to save product');
     }
   };
 
   return (
-    <form onSubmit={handleSubmit} className="bg-white p-6 rounded-lg shadow">
-      {error && <div className="mb-4 p-3 bg-red-100 text-red-700 rounded">{error}</div>}
+    <form onSubmit={handleSubmit} className="bg-white p-6 rounded-lg shadow mb-6">
+      <h2 className="text-2xl font-bold mb-4">{productId ? 'Edit Product' : 'Create Product'}</h2>
+      
+      {(storeError || localError) && <div className="mb-4 p-3 bg-red-100 text-red-700 rounded">{storeError || localError}</div>}
 
       <div className="mb-4">
-        <label className="block text-sm font-medium text-gray-700 mb-1">Name</label>
+        <label className="block text-gray-700 font-bold mb-2">Name *</label>
         <input
           type="text"
-          required
+          name="name"
           value={formData.name}
-          onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-          className="w-full px-3 py-2 border border-gray-300 rounded-md"
+          onChange={handleChange}
+          required
+          className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:border-blue-500"
+          placeholder="Product name"
         />
       </div>
 
       <div className="mb-4">
-        <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
+        <label className="block text-gray-700 font-bold mb-2">Description</label>
         <textarea
+          name="description"
           value={formData.description}
-          onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-          className="w-full px-3 py-2 border border-gray-300 rounded-md"
+          onChange={handleChange}
+          className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:border-blue-500"
+          placeholder="Product description"
+          rows={4}
         />
       </div>
 
       <div className="grid grid-cols-2 gap-4 mb-4">
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Price</label>
+          <label className="block text-gray-700 font-bold mb-2">Price *</label>
           <input
             type="number"
-            step="0.01"
-            required
+            name="price"
             value={formData.price}
-            onChange={(e) => setFormData({ ...formData, price: e.target.value })}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md"
+            onChange={handleChange}
+            required
+            step="0.01"
+            min="0"
+            className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:border-blue-500"
+            placeholder="0.00"
           />
         </div>
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Quantity</label>
+          <label className="block text-gray-700 font-bold mb-2">Quantity *</label>
           <input
             type="number"
-            required
+            name="quantity"
             value={formData.quantity}
-            onChange={(e) => setFormData({ ...formData, quantity: e.target.value })}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md"
+            onChange={handleChange}
+            required
+            min="0"
+            className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:border-blue-500"
+            placeholder="0"
           />
         </div>
       </div>
@@ -801,66 +931,78 @@ export const ProductForm: React.FC<ProductFormProps> = ({ product, onSuccess }) 
       <button
         type="submit"
         disabled={loading}
-        className="w-full bg-blue-600 text-white py-2 rounded-md hover:bg-blue-700 disabled:opacity-50"
+        className="w-full px-4 py-2 bg-green-500 text-white rounded hover:bg-green-600 disabled:bg-gray-400"
       >
-        {loading ? 'Saving...' : product ? 'Update Product' : 'Create Product'}
+        {loading ? 'Saving...' : productId ? 'Update Product' : 'Create Product'}
       </button>
     </form>
   );
 };
+
 ```
 
 Create `frontend-react/src/components/ProductList.tsx`:
 
 ```typescript
-import { Product, productApi } from '../services/api';
+import React, { useEffect } from 'react';
+import { useProductStore } from '../store/productStore';
 
 interface ProductListProps {
-  products: Product[];
-  onEdit: (product: Product) => void;
-  onDelete: () => void;
+  onEdit: (id: number) => void;
 }
 
-export const ProductList: React.FC<ProductListProps> = ({ products, onEdit, onDelete }) => {
+export const ProductList: React.FC<ProductListProps> = ({ onEdit }) => {
+  const products = useProductStore((state) => state.products);
+  const loading = useProductStore((state) => state.loading);
+  const error = useProductStore((state) => state.error);
+  const fetchProducts = useProductStore((state) => state.fetchProducts);
+  const deleteProduct = useProductStore((state) => state.deleteProduct);
+
+  useEffect(() => {
+    fetchProducts();
+  }, [fetchProducts]);
+
   const handleDelete = async (id: number) => {
     if (!window.confirm('Are you sure?')) return;
     try {
-      await productApi.delete(id);
-      onDelete();
+      await deleteProduct(id);
     } catch (err) {
-      alert(err instanceof Error ? err.message : 'Delete failed');
+      // Error is already handled in store
     }
   };
 
+  if (loading) return <div className="text-center py-4">Loading...</div>;
+
   return (
     <div className="overflow-x-auto">
-      <table className="w-full border-collapse">
-        <thead>
-          <tr className="bg-gray-100">
-            <th className="border p-2 text-left">Name</th>
-            <th className="border p-2 text-left">Description</th>
-            <th className="border p-2 text-right">Price</th>
-            <th className="border p-2 text-right">Quantity</th>
-            <th className="border p-2">Actions</th>
+      {error && <div className="mb-4 p-4 bg-red-100 text-red-700 rounded">{error}</div>}
+      <table className="w-full border-collapse border border-gray-300">
+        <thead className="bg-gray-100">
+          <tr>
+            <th className="border border-gray-300 px-4 py-2 text-left">Name</th>
+            <th className="border border-gray-300 px-4 py-2 text-left">Description</th>
+            <th className="border border-gray-300 px-4 py-2 text-right">Price</th>
+            <th className="border border-gray-300 px-4 py-2 text-right">Quantity</th>
+            <th className="border border-gray-300 px-4 py-2 text-center">Actions</th>
           </tr>
         </thead>
         <tbody>
-          {products.map((product) => (
+          {products.map(product => (
             <tr key={product.id} className="hover:bg-gray-50">
-              <td className="border p-2">{product.name}</td>
-              <td className="border p-2">{product.description}</td>
-              <td className="border p-2 text-right">${product.price}</td>
-              <td className="border p-2 text-right">{product.quantity}</td>
-              <td className="border p-2 text-center">
+              <td className="border border-gray-300 px-4 py-2">{product.name}</td>
+              <td className="border border-gray-300 px-4 py-2">{product.description || '-'}</td>
+              <td className="border border-gray-300 px-4 py-2 text-right">${product.price}</td>
+              <td className="border border-gray-300 px-4 py-2 text-right">{product.quantity}</td>
+              <td className="border border-gray-300 px-4 py-2 text-center">
                 <button
-                  onClick={() => onEdit(product)}
-                  className="text-blue-600 hover:underline mr-2"
+                  onClick={() => onEdit(product.id)}
+                  className="mr-2 px-3 py-1 bg-blue-500 text-white rounded hover:bg-blue-600"
                 >
                   Edit
                 </button>
                 <button
                   onClick={() => handleDelete(product.id)}
-                  className="text-red-600 hover:underline"
+                  className="px-3 py-1 bg-red-500 text-white rounded hover:bg-red-600"
                 >
                   Delete
                 </button>
@@ -869,9 +1011,12 @@ export const ProductList: React.FC<ProductListProps> = ({ products, onEdit, onDe
           ))}
         </tbody>
       </table>
+      {products.length === 0 && !error && <div className="text-center py-4 text-gray-500">No products found</div>}
     </div>
   );
 };
+
+
 ```
 
 ### 3.6 Create Main App
@@ -879,63 +1024,42 @@ export const ProductList: React.FC<ProductListProps> = ({ products, onEdit, onDe
 Edit `frontend-react/src/App.tsx`:
 
 ```typescript
-import { useState, useEffect } from 'react';
-import { Product, productApi } from './services/api';
+import React from 'react';
+import { useProductStore } from './store/productStore';
 import { ProductForm } from './components/ProductForm';
 import { ProductList } from './components/ProductList';
 import './App.css';
 
 function App() {
-  const [products, setProducts] = useState<Product[]>([]);
-  const [selectedProduct, setSelectedProduct] = useState<Product | undefined>();
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
+  const [selectedProductId, setSelectedProductId] = React.useState<number | null>(null);
+  
+  const selectProduct = useProductStore((state) => state.selectProduct);
+  const products = useProductStore((state) => state.products);
 
-  const loadProducts = async () => {
-    setLoading(true);
-    try {
-      const data = await productApi.getAll();
-      setProducts(data);
-      setError('');
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load products');
-    } finally {
-      setLoading(false);
+  const handleFormSuccess = () => {
+    setSelectedProductId(null);
+  };
+
+  const handleEditProduct = (id: number) => {
+    const product = products.find((p) => p.id === id);
+    if (product) {
+      selectProduct(product);
+      setSelectedProductId(id);
     }
   };
 
-  useEffect(() => {
-    loadProducts();
-  }, []);
-
   return (
     <div className="min-h-screen bg-gray-100">
-      <div className="max-w-6xl mx-auto p-8">
-        <h1 className="text-4xl font-bold mb-8">Product CRUD</h1>
-
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-8 mb-8">
-          <div className="md:col-span-1">
-            <ProductForm
-              product={selectedProduct}
-              onSuccess={() => {
-                setSelectedProduct(undefined);
-                loadProducts();
-              }}
-            />
-          </div>
-
-          <div className="md:col-span-2">
-            {error && <div className="mb-4 p-3 bg-red-100 text-red-700 rounded">{error}</div>}
-            {loading ? (
-              <div>Loading...</div>
-            ) : (
-              <ProductList
-                products={products}
-                onEdit={setSelectedProduct}
-                onDelete={loadProducts}
-              />
-            )}
-          </div>
+      <nav className="bg-blue-600 text-white p-4 shadow">
+        <h1 className="text-3xl font-bold">Product Management</h1>
+        <p className="text-blue-100">React CRUD Application</p>
+      </nav>
+      
+      <div className="container mx-auto py-8 px-4">
+        <ProductForm productId={selectedProductId} onSuccess={handleFormSuccess} />
+        <div className="bg-white p-6 rounded-lg shadow">
+          <h2 className="text-2xl font-bold mb-4">Products</h2>
+          <ProductList onEdit={handleEditProduct} />
         </div>
       </div>
     </div>
@@ -943,6 +1067,7 @@ function App() {
 }
 
 export default App;
+
 ```
 
 ---
@@ -953,6 +1078,7 @@ export default App;
 
 ```bash
 # Create Angular app
+npm install -g @angular/cli
 ng new frontend-angular --routing --style=css
 
 cd frontend-angular
@@ -962,9 +1088,719 @@ cd frontend-angular
 
 ```bash
 # Install Tailwind CSS
-ng add @tailwindcss/ng@latest
+npm install @ngrx/store@19 @ngrx/effects@19 @ngrx/entity@19 @ngrx/store-devtools@19
+
+npm install tailwindcss @tailwindcss/postcss postcss --force
+.postcssrc.json
+
+{
+  "plugins": {
+    "@tailwindcss/postcss": {}
+  }
+}
+
+Add an @import to ./src/styles.css that imports Tailwind CSS.
+@import "tailwindcss";
+
+tailwind.config.js
+/** @type {import('tailwindcss').Config} */
+module.exports = {
+  content: [
+    "./src/**/*.{html,ts}",
+  ],
+  theme: {
+    extend: {},
+  },
+  plugins: [],
+}
+
+
 ```
 
+### 4.3 Create API Service
+
+
+create `frontend-angular\src\app\app.routes.ts`:
+
+```typescript
+import { Routes } from '@angular/router';
+
+export const appRoutes: Routes = [
+  {
+    path: '',
+    redirectTo: '/products',
+    pathMatch: 'full'
+  },
+  {
+    path: 'products',
+    loadChildren: () => import('./products/products.routes').then(m => m.productsRoutes)
+  }
+];
+
+```
+### 4.3 Create API Service
+
+
+create `frontend-angular\src\app\app.config.ts`:
+
+```typescript
+import { ApplicationConfig } from '@angular/core';
+import { provideClientHydration } from '@angular/platform-browser';
+import { provideHttpClient } from '@angular/common/http';
+import { provideRouter } from '@angular/router';
+import { provideStore } from '@ngrx/store';
+import { provideEffects } from '@ngrx/effects';
+import { productReducer } from './store/product.reducer';
+import { ProductEffects } from './store/product.effects';
+import { appRoutes } from './app.routes';
+
+export const appConfig: ApplicationConfig = {
+  providers: [
+    provideRouter(appRoutes),
+    provideClientHydration(),
+    provideHttpClient(),
+    provideStore({ products: productReducer }),
+    provideEffects([ProductEffects])
+  ]
+};
+
+
+```
+### 4.3 Create API Service
+
+
+create `frontend-angular\postcss.config.js`:
+
+```typescript
+module.exports = {
+  plugins: {
+    tailwindcss: {},
+    autoprefixer: {},
+  },
+}
+
+
+
+```
+### 4.3 Create API Service
+
+
+create `frontend-angular\server.ts`:
+
+```typescript
+import 'zone.js/node';
+import express from 'express';
+import { fileURLToPath } from 'node:url';
+import { dirname, join, resolve } from 'node:path';
+import { renderApplication } from '@angular/platform-server';
+import { APP_BASE_HREF } from '@angular/common';
+import bootstrap from './src/main.server'; // bootstrap function
+
+export function app(): express.Express {
+  const server = express();
+
+  const serverDistFolder = dirname(fileURLToPath(import.meta.url));
+  const browserDistFolder = resolve(serverDistFolder, '../browser');
+
+  // Serve static files
+  server.get('*.*', express.static(browserDistFolder, { maxAge: '1y' }));
+
+  // Angular SSR route handling
+  server.get('*', async (req, res, next) => {
+    try {
+      const html = await renderApplication(bootstrap, {
+        document: join(browserDistFolder, 'index.html'),
+        url: req.originalUrl,
+        platformProviders: [
+          { provide: APP_BASE_HREF, useValue: req.baseUrl },
+        ],
+      });
+
+      res.send(html);
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  return server;
+}
+
+function run(): void {
+  const port = process.env['PORT'] || 4000;
+  const server = app();
+  server.listen(port, () => {
+    console.log(`✅ Angular SSR server running on http://localhost:${port}`);
+  });
+}
+
+run();
+
+
+
+
+
+
+```
+### 4.3 Create API Service
+
+
+create `frontend-angular\src\app\app.component.ts`:
+
+```typescript
+import { Component } from '@angular/core';
+import { RouterOutlet, RouterLink } from '@angular/router';
+import { CommonModule } from '@angular/common';
+
+@Component({
+  selector: 'app-root',
+  standalone: true,
+  imports: [RouterOutlet, RouterLink, CommonModule],
+  template: `
+    <div class="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900">
+      <!-- Navigation Bar -->
+      <nav class="backdrop-blur-md bg-black/30 border-b border-purple-500/20 sticky top-0 z-50">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div class="flex justify-between items-center h-16">
+            <div class="flex items-center space-x-3">
+              <div class="w-10 h-10 bg-gradient-to-br from-purple-400 to-pink-600 rounded-lg flex items-center justify-center">
+                <span class="text-white font-bold text-lg">P</span>
+              </div>
+              <h1 class="text-2xl font-bold bg-gradient-to-r from-purple-400 via-pink-400 to-purple-400 bg-clip-text text-transparent">ProductHub</h1>
+            </div>
+            <div class="hidden md:flex space-x-8">
+              <a routerLink="/products" class="text-gray-300 hover:text-white transition-colors duration-200">Products</a>
+              <a href="#features" class="text-gray-300 hover:text-white transition-colors duration-200">Features</a>
+              <a href="#about" class="text-gray-300 hover:text-white transition-colors duration-200">About</a>
+            </div>
+          </div>
+        </div>
+      </nav>
+
+      <!-- Hero Section -->
+      <div class="relative overflow-hidden">
+        <div class="absolute inset-0 bg-gradient-to-b from-purple-500/10 via-transparent to-transparent"></div>
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-20 relative">
+          <div class="text-center mb-12">
+            <h2 class="text-5xl md:text-6xl font-bold text-white mb-6 leading-tight">
+              Manage Your Products
+              <span class="block bg-gradient-to-r from-purple-400 via-pink-400 to-purple-400 bg-clip-text text-transparent">With Ease</span>
+            </h2>
+            <p class="text-xl text-gray-300 mb-8 max-w-2xl mx-auto">
+              A modern, full-stack CRUD application built with Laravel, React, and Angular. Experience seamless product management across multiple frameworks.
+            </p>
+            <div class="flex flex-col sm:flex-row gap-4 justify-center">
+              <a routerLink="/products" class="px-8 py-3 bg-gradient-to-r from-purple-500 to-pink-600 text-white rounded-lg font-semibold hover:shadow-lg hover:shadow-purple-500/50 transition-all duration-200 transform hover:scale-105">
+                Get Started
+              </a>
+              <button class="px-8 py-3 border border-purple-500/50 text-white rounded-lg font-semibold hover:bg-purple-500/10 transition-colors duration-200">
+                Learn More
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Features Section -->
+      <div id="features" class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-20">
+        <h3 class="text-4xl font-bold text-white text-center mb-12">Powerful Features</h3>
+        <div class="grid md:grid-cols-3 gap-8">
+          <!-- Feature 1 -->
+          <div class="group relative">
+            <div class="absolute inset-0 bg-gradient-to-r from-purple-500/20 to-pink-500/20 rounded-lg blur opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
+            <div class="relative bg-black/40 backdrop-blur border border-purple-500/20 rounded-lg p-8 hover:border-purple-500/50 transition-colors duration-200">
+              <div class="w-12 h-12 bg-gradient-to-br from-purple-400 to-pink-600 rounded-lg flex items-center justify-center mb-4">
+                <span class="text-white text-xl">⚡</span>
+              </div>
+              <h4 class="text-xl font-bold text-white mb-3">Lightning Fast</h4>
+              <p class="text-gray-400">Optimized performance with lazy loading, state management, and efficient caching strategies.</p>
+            </div>
+          </div>
+
+          <!-- Feature 2 -->
+          <div class="group relative">
+            <div class="absolute inset-0 bg-gradient-to-r from-purple-500/20 to-pink-500/20 rounded-lg blur opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
+            <div class="relative bg-black/40 backdrop-blur border border-purple-500/20 rounded-lg p-8 hover:border-purple-500/50 transition-colors duration-200">
+              <div class="w-12 h-12 bg-gradient-to-br from-purple-400 to-pink-600 rounded-lg flex items-center justify-center mb-4">
+                <span class="text-white text-xl">🔒</span>
+              </div>
+              <h4 class="text-xl font-bold text-white mb-3">Secure & Reliable</h4>
+              <p class="text-gray-400">Enterprise-grade security with proper authentication, validation, and error handling.</p>
+            </div>
+          </div>
+
+          <!-- Feature 3 -->
+          <div class="group relative">
+            <div class="absolute inset-0 bg-gradient-to-r from-purple-500/20 to-pink-500/20 rounded-lg blur opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
+            <div class="relative bg-black/40 backdrop-blur border border-purple-500/20 rounded-lg p-8 hover:border-purple-500/50 transition-colors duration-200">
+              <div class="w-12 h-12 bg-gradient-to-br from-purple-400 to-pink-600 rounded-lg flex items-center justify-center mb-4">
+                <span class="text-white text-xl">🎨</span>
+              </div>
+              <h4 class="text-xl font-bold text-white mb-3">Beautiful UI</h4>
+              <p class="text-gray-400">Modern, responsive design that works seamlessly across all devices and screen sizes.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Tech Stack Section -->
+      <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-20">
+        <h3 class="text-4xl font-bold text-white text-center mb-12">Built With Modern Tech</h3>
+        <div class="grid md:grid-cols-4 gap-6">
+          <div class="bg-black/40 backdrop-blur border border-purple-500/20 rounded-lg p-6 text-center hover:border-purple-500/50 transition-colors duration-200">
+            <div class="text-4xl mb-3">🚀</div>
+            <h4 class="text-white font-bold mb-2">Laravel 12</h4>
+            <p class="text-gray-400 text-sm">Powerful backend API with SOLID principles</p>
+          </div>
+          <div class="bg-black/40 backdrop-blur border border-purple-500/20 rounded-lg p-6 text-center hover:border-purple-500/50 transition-colors duration-200">
+            <div class="text-4xl mb-3">⚛️</div>
+            <h4 class="text-white font-bold mb-2">React 18</h4>
+            <p class="text-gray-400 text-sm">Modern frontend with Zustand state management</p>
+          </div>
+          <div class="bg-black/40 backdrop-blur border border-purple-500/20 rounded-lg p-6 text-center hover:border-purple-500/50 transition-colors duration-200">
+            <div class="text-4xl mb-3">🅰️</div>
+            <h4 class="text-white font-bold mb-2">Angular 17</h4>
+            <p class="text-gray-400 text-sm">Advanced frontend with NgRx store</p>
+          </div>
+          <div class="bg-black/40 backdrop-blur border border-purple-500/20 rounded-lg p-6 text-center hover:border-purple-500/50 transition-colors duration-200">
+            <div class="text-4xl mb-3">🎨</div>
+            <h4 class="text-white font-bold mb-2">Tailwind CSS</h4>
+            <p class="text-gray-400 text-sm">Utility-first CSS for responsive design</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Router Outlet -->
+      <router-outlet></router-outlet>
+
+      <!-- Footer -->
+      <footer class="border-t border-purple-500/20 bg-black/40 backdrop-blur mt-20">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12 text-center">
+          <p class="text-gray-400">© 2024 ProductHub. Built with ❤️ using modern technologies.</p>
+        </div>
+      </footer>
+    </div>
+  `,
+  styleUrl: './app.component.css'
+})
+export class AppComponent {
+  title = 'ProductHub';
+}
+
+
+
+```
+### 4.3 Create API Service
+
+
+
+### 4.3 Create API Service
+
+
+Edit `frontend-angular\src\app\store\product.actions.ts`:
+
+```typescript
+import { createAction, props } from '@ngrx/store';
+import { Product } from '../services/product.service';
+
+// Load Products
+export const loadProducts = createAction(
+  '[Product Page] Load Products'
+);
+
+export const loadProductsSuccess = createAction(
+  '[Product API] Load Products Success',
+  props<{ products: Product[] }>()
+);
+
+export const loadProductsFailure = createAction(
+  '[Product API] Load Products Failure',
+  props<{ error: string }>()
+);
+
+// Load Single Product
+export const loadProduct = createAction(
+  '[Product Details Page] Load Product',
+  props<{ id: number }>()
+);
+
+export const loadProductSuccess = createAction(
+  '[Product API] Load Product Success',
+  props<{ product: Product }>()
+);
+
+export const loadProductFailure = createAction(
+  '[Product API] Load Product Failure',
+  props<{ error: string }>()
+);
+
+// Create Product
+export const createProduct = createAction(
+  '[Product Create Page] Create Product',
+  props<{ product: Omit<Product, 'id' | 'created_at' | 'updated_at'> }>()
+);
+
+export const createProductSuccess = createAction(
+  '[Product API] Create Product Success',
+  props<{ product: Product }>()
+);
+
+export const createProductFailure = createAction(
+  '[Product API] Create Product Failure',
+  props<{ error: string }>()
+);
+
+// Update Product
+export const updateProduct = createAction(
+  '[Product Edit Page] Update Product',
+  props<{ id: number; product: Partial<Omit<Product, 'id' | 'created_at' | 'updated_at'>> }>()
+);
+
+export const updateProductSuccess = createAction(
+  '[Product API] Update Product Success',
+  props<{ product: Product }>()
+);
+
+export const updateProductFailure = createAction(
+  '[Product API] Update Product Failure',
+  props<{ error: string }>()
+);
+
+// Delete Product
+export const deleteProduct = createAction(
+  '[Product Delete] Delete Product',
+  props<{ id: number }>()
+);
+
+export const deleteProductSuccess = createAction(
+  '[Product API] Delete Product Success',
+  props<{ id: number }>()
+);
+
+export const deleteProductFailure = createAction(
+  '[Product API] Delete Product Failure',
+  props<{ error: string }>()
+);
+
+// Clear Selection
+export const clearProductSelection = createAction(
+  '[Product] Clear Selection'
+);
+
+
+
+```
+### 4.3 Create API Service
+
+
+Edit `frontend-angular\src\app\store\product.effects.ts`:
+
+```typescript
+import { Injectable, inject } from '@angular/core';
+import { Actions, createEffect, ofType } from '@ngrx/effects';
+import { catchError, map, switchMap } from 'rxjs/operators';
+import { of } from 'rxjs';
+import { ProductService } from '../services/product.service';
+import * as ProductActions from './product.actions';
+
+@Injectable()
+export class ProductEffects {
+  // Standalone injection
+  private actions$ = inject(Actions);
+  private productService = inject(ProductService);
+
+  // Load all products
+  loadProducts$ = createEffect(() =>
+    this.actions$.pipe(
+      ofType(ProductActions.loadProducts),
+      switchMap(() =>
+        this.productService.getAll().pipe(
+          map((response) =>
+            ProductActions.loadProductsSuccess({
+              products: response.data || [],
+            })
+          ),
+          catchError((error) =>
+            of(
+              ProductActions.loadProductsFailure({
+                error: error.error?.message || 'Failed to load products',
+              })
+            )
+          )
+        )
+      )
+    )
+  );
+
+  // Load single product by id
+  loadProduct$ = createEffect(() =>
+    this.actions$.pipe(
+      ofType(ProductActions.loadProduct),
+      switchMap(({ id }) =>
+        this.productService.getById(id).pipe(
+          map((response) =>
+            ProductActions.loadProductSuccess({
+              product: response.data!,
+            })
+          ),
+          catchError((error) =>
+            of(
+              ProductActions.loadProductFailure({
+                error: error.error?.message || 'Failed to load product',
+              })
+            )
+          )
+        )
+      )
+    )
+  );
+
+  // Create product
+  createProduct$ = createEffect(() =>
+    this.actions$.pipe(
+      ofType(ProductActions.createProduct),
+      switchMap(({ product }) =>
+        this.productService.create(product).pipe(
+          map((response) =>
+            ProductActions.createProductSuccess({
+              product: response.data!,
+            })
+          ),
+          catchError((error) =>
+            of(
+              ProductActions.createProductFailure({
+                error: error.error?.message || 'Failed to create product',
+              })
+            )
+          )
+        )
+      )
+    )
+  );
+
+  // Update product
+  updateProduct$ = createEffect(() =>
+    this.actions$.pipe(
+      ofType(ProductActions.updateProduct),
+      switchMap(({ id, product }) =>
+        this.productService.update(id, product).pipe(
+          map((response) =>
+            ProductActions.updateProductSuccess({
+              product: response.data!,
+            })
+          ),
+          catchError((error) =>
+            of(
+              ProductActions.updateProductFailure({
+                error: error.error?.message || 'Failed to update product',
+              })
+            )
+          )
+        )
+      )
+    )
+  );
+
+  // Delete product
+  deleteProduct$ = createEffect(() =>
+    this.actions$.pipe(
+      ofType(ProductActions.deleteProduct),
+      switchMap(({ id }) =>
+        this.productService.delete(id).pipe(
+          map(() =>
+            ProductActions.deleteProductSuccess({
+              id,
+            })
+          ),
+          catchError((error) =>
+            of(
+              ProductActions.deleteProductFailure({
+                error: error.error?.message || 'Failed to delete product',
+              })
+            )
+          )
+        )
+      )
+    )
+  );
+}
+
+
+```
+### 4.3 Create API Service
+
+
+Edit `frontend-angular\src\app\store\product.reducer.ts`:
+
+```typescript
+import { createReducer, on } from '@ngrx/store';
+import { Product } from '../services/product.service';
+import * as ProductActions from './product.actions';
+
+export interface ProductState {
+  products: Product[];
+  selectedProduct: Product | null;
+  loading: boolean;
+  error: string | null;
+}
+
+export const initialState: ProductState = {
+  products: [],
+  selectedProduct: null,
+  loading: false,
+  error: null,
+};
+
+export const productReducer = createReducer(
+  initialState,
+  
+  // Load Products
+  on(ProductActions.loadProducts, (state: ProductState) => ({
+    ...state,
+    loading: true,
+    error: null,
+  })),
+  on(ProductActions.loadProductsSuccess, (state: ProductState, { products }: { products: Product[] }) => ({
+    ...state,
+    products,
+    loading: false,
+  })),
+  on(ProductActions.loadProductsFailure, (state: ProductState, { error }: { error: string }) => ({
+    ...state,
+    error,
+    loading: false,
+  })),
+  
+  // Load Single Product
+  on(ProductActions.loadProduct, (state: ProductState) => ({
+    ...state,
+    loading: true,
+    error: null,
+  })),
+  on(ProductActions.loadProductSuccess, (state: ProductState, { product }: { product: Product }) => ({
+    ...state,
+    selectedProduct: product,
+    loading: false,
+  })),
+  on(ProductActions.loadProductFailure, (state: ProductState, { error }: { error: string }) => ({
+    ...state,
+    error,
+    loading: false,
+  })),
+  
+  // Create Product
+  on(ProductActions.createProduct, (state: ProductState) => ({
+    ...state,
+    loading: true,
+    error: null,
+  })),
+  on(ProductActions.createProductSuccess, (state: ProductState, { product }: { product: Product }) => ({
+    ...state,
+    products: [...state.products, product],
+    loading: false,
+  })),
+  on(ProductActions.createProductFailure, (state: ProductState, { error }: { error: string }) => ({
+    ...state,
+    error,
+    loading: false,
+  })),
+  
+  // Update Product
+  on(ProductActions.updateProduct, (state: ProductState) => ({
+    ...state,
+    loading: true,
+    error: null,
+  })),
+  on(ProductActions.updateProductSuccess, (state: ProductState, { product }: { product: Product }) => ({
+    ...state,
+    products: state.products.map((p: Product) => (p.id === product.id ? product : p)),
+    selectedProduct: product,
+    loading: false,
+  })),
+  on(ProductActions.updateProductFailure, (state: ProductState, { error }: { error: string }) => ({
+    ...state,
+    error,
+    loading: false,
+  })),
+  
+  // Delete Product
+  on(ProductActions.deleteProduct, (state: ProductState) => ({
+    ...state,
+    loading: true,
+    error: null,
+  })),
+  on(ProductActions.deleteProductSuccess, (state: ProductState, { id }: { id: number }) => ({
+    ...state,
+    products: state.products.filter((p: Product) => p.id !== id),
+    selectedProduct: state.selectedProduct?.id === id ? null : state.selectedProduct,
+    loading: false,
+  })),
+  on(ProductActions.deleteProductFailure, (state: ProductState, { error }: { error: string }) => ({
+    ...state,
+    error,
+    loading: false,
+  })),
+  
+  // Clear Selection
+  on(ProductActions.clearProductSelection, (state: ProductState) => ({
+    ...state,
+    selectedProduct: null,
+  }))
+);
+
+
+
+```
+### 4.3 Create API Service
+
+
+Edit `frontend-angular\src\app\store\product.selectors.ts`:
+
+```typescript
+
+import { createFeatureSelector, createSelector } from '@ngrx/store';
+import { ProductState } from './product.reducer';
+
+export const selectProductFeature = createFeatureSelector<ProductState>('products');
+
+export const selectAllProducts = createSelector(
+  selectProductFeature,
+  (state: ProductState) => state.products
+);
+
+export const selectSelectedProduct = createSelector(
+  selectProductFeature,
+  (state: ProductState) => state.selectedProduct
+);
+
+export const selectLoadingState = createSelector(
+  selectProductFeature,
+  (state: ProductState) => state.loading
+);
+
+export const selectErrorState = createSelector(
+  selectProductFeature,
+  (state: ProductState) => state.error
+);
+
+export const selectProductById = (id: number) =>
+  createSelector(
+    selectAllProducts,
+    (products) => products.find((p) => p.id === id) || null
+  );
+
+export const selectProductCount = createSelector(
+  selectAllProducts,
+  (products) => products.length
+);
+
+export const selectProductsWithLoading = createSelector(
+  selectAllProducts,
+  selectLoadingState,
+  (products, loading) => ({ products, loading })
+);
+
+
+```
 ### 4.3 Create API Service
 
 ```bash
@@ -1014,16 +1850,44 @@ export class ProductService {
     return this.http.post<ApiResponse<Product>>(this.apiUrl, product);
   }
 
-  update(id: number, product: Partial<Product>): Observable<ApiResponse<Product>> {
+  update(id: number, product: Partial<Omit<Product, 'id' | 'created_at' | 'updated_at'>>): Observable<ApiResponse<Product>> {
     return this.http.put<ApiResponse<Product>>(`${this.apiUrl}/${id}`, product);
   }
 
-  delete(id: number): Observable<ApiResponse<null>> {
-    return this.http.delete<ApiResponse<null>>(`${this.apiUrl}/${id}`);
+  delete(id: number): Observable<ApiResponse<void>> {
+    return this.http.delete<ApiResponse<void>>(`${this.apiUrl}/${id}`);
   }
 }
-```
 
+```
+### 4.3 Create API Service
+
+
+Edit `frontend-angular\src\app\products\products.routes.ts`:
+
+```typescript
+import { Routes } from '@angular/router';
+import { ProductListComponent } from '../components/product-list/product-list.component';
+import { ProductFormComponent } from '../components/product-form/product-form.component';
+
+export const productsRoutes: Routes = [
+  {
+    path: '',
+    component: ProductListComponent,
+  },
+  {
+    path: 'create',
+    component: ProductFormComponent,
+  },
+  {
+    path: 'edit/:id',
+    component: ProductFormComponent,
+  }
+];
+
+
+
+```
 ### 4.4 Create Components
 
 ```bash
@@ -1034,201 +1898,383 @@ ng generate component components/product-list
 Edit `frontend-angular/src/app/components/product-form/product-form.component.ts`:
 
 ```typescript
-import { Component, EventEmitter, Input, OnInit, Output } from '@angular/core';
-import { FormBuilder, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
-import { Product, ProductService } from '../../services/product.service';
+import { Component, OnInit, OnDestroy, Optional } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { FormsModule, ReactiveFormsModule, FormBuilder, FormGroup, Validators } from '@angular/forms';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
+import { Store } from '@ngrx/store';
+import { Observable, Subject, filter, takeUntil } from 'rxjs';
+import { Product } from '../../services/product.service';
+import * as ProductActions from '../../store/product.actions';
+import { selectLoadingState, selectErrorState, selectSelectedProduct } from '../../store/product.selectors';
 
 @Component({
   selector: 'app-product-form',
-  templateUrl: './product-form.component.html',
-  styleUrls: ['./product-form.component.css'],
   standalone: true,
-  imports: [CommonModule, ReactiveFormsModule]
+  imports: [CommonModule, FormsModule, ReactiveFormsModule, RouterLink],
+  templateUrl: './product-form.component.html',
+  styleUrl: './product-form.component.css'
 })
-export class ProductFormComponent implements OnInit {
-  @Input() product?: Product;
-  @Output() success = new EventEmitter<void>();
-
-  form!: FormGroup;
-  loading = false;
-  error = '';
+export class ProductFormComponent implements OnInit, OnDestroy {
+  form: FormGroup;
+  loading$: Observable<boolean>;
+  error$: Observable<string | null>;
+  selectedProduct$: Observable<Product | null>;
+  productId: number | null = null;
+  private destroy$ = new Subject<void>();
 
   constructor(
     private fb: FormBuilder,
-    private productService: ProductService
+    private store: Store,
+    @Optional() private route: ActivatedRoute | null,
+    @Optional() private router: Router | null
   ) {
     this.form = this.fb.group({
       name: ['', [Validators.required, Validators.maxLength(255)]],
       description: [''],
-      price: [0, [Validators.required, Validators.min(0)]],
-      quantity: [0, [Validators.required, Validators.min(0)]],
+      price: ['', [Validators.required, Validators.min(0)]],
+      quantity: ['', [Validators.required, Validators.min(0)]],
     });
+
+    this.loading$ = this.store.select(selectLoadingState);
+    this.error$ = this.store.select(selectErrorState);
+    this.selectedProduct$ = this.store.select(selectSelectedProduct);
   }
 
-  ngOnInit() {
-    if (this.product) {
-      this.form.patchValue(this.product);
+  ngOnInit(): void {
+    if (this.route) {
+      this.route.params.pipe(takeUntil(this.destroy$)).subscribe(params => {
+        if (params['id']) {
+          this.productId = +params['id']; // Convert to number
+          
+          // Clear previous selection and load the product
+          this.store.dispatch(ProductActions.clearProductSelection());
+          this.store.dispatch(ProductActions.loadProduct({ id: this.productId }));
+          
+          // Subscribe to the selected product to populate the form
+          this.selectedProduct$.pipe(
+            filter(product => !!product),
+            takeUntil(this.destroy$)
+          ).subscribe(product => {
+            console.log('Route product:', product);
+            if (product && product.id === this.productId) {
+              this.form.patchValue({
+                name: product.name,
+                description: product.description || '',
+                price: product.price.toString(),
+                quantity: product.quantity.toString(),
+              });
+            }
+          });
+        } else {
+          // Clear selection for create mode
+          this.store.dispatch(ProductActions.clearProductSelection());
+          this.productId = null;
+          this.form.reset();
+        }
+      });
+    } else {
+      this.form.reset();
     }
   }
 
-  onSubmit() {
+  ngOnDestroy(): void {
+    this.destroy$.next();
+    this.destroy$.complete();
+  }
+
+  onSubmit(): void {
     if (!this.form.valid) return;
 
-    this.loading = true;
-    this.error = '';
+    const data = this.form.value;
 
-    const payload = this.form.value;
-    const request = this.product
-      ? this.productService.update(this.product.id, payload)
-      : this.productService.create(payload);
+    if (this.productId) {
+      this.store.dispatch(ProductActions.updateProduct({ id: this.productId, product: data }));
+    } else {
+      this.store.dispatch(ProductActions.createProduct({ product: data }));
+    }
 
-    request.subscribe({
-      next: () => {
-        this.form.reset();
-        this.success.emit();
-      },
-      error: (err) => {
-        this.error = err.error?.message || 'An error occurred';
-        this.loading = false;
-      },
-      complete: () => {
-        this.loading = false;
-      }
+    // Better way to handle navigation after success
+    this.loading$.pipe(
+      filter(loading => !loading),
+      takeUntil(this.destroy$)
+    ).subscribe(() => {
+      this.error$.pipe(
+        takeUntil(this.destroy$)
+      ).subscribe(error => {
+        if (!error) {
+          if (this.router) {
+            this.router.navigate(['/products']);
+          }
+        }
+      });
     });
   }
 }
+
+
 ```
 
 Edit `frontend-angular/src/app/components/product-form/product-form.component.html`:
 
 ```html
-<form [formGroup]="form" (ngSubmit)="onSubmit()" class="bg-white p-6 rounded-lg shadow">
-  <div *ngIf="error" class="mb-4 p-3 bg-red-100 text-red-700 rounded">
-    {{ error }}
-  </div>
+<div class="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 py-12">
+  <div class="max-w-2xl mx-auto px-4 sm:px-6 lg:px-8">
+    <!-- Back Button -->
+    <a routerLink="/products" class="inline-flex items-center text-purple-400 hover:text-purple-300 mb-8 transition-colors duration-200">
+      <span class="mr-2">←</span>
+      Back to Products
+    </a>
 
-  <div class="mb-4">
-    <label class="block text-sm font-medium text-gray-700 mb-1">Name</label>
-    <input
-      type="text"
-      formControlName="name"
-      class="w-full px-3 py-2 border border-gray-300 rounded-md"
-    />
-  </div>
+    <!-- Form Card -->
+    <div class="bg-black/40 backdrop-blur border border-purple-500/20 rounded-lg p-8">
+      <h2 class="text-3xl font-bold text-white mb-2">
+        {{ (selectedProduct$ | async) ? '✏️ Edit Product' : '✨ Create New Product' }}
+      </h2>
+      <p class="text-gray-400 mb-8">{{ (selectedProduct$ | async) ? 'Update product details' : 'Add a new product to your catalog' }}</p>
 
-  <div class="mb-4">
-    <label class="block text-sm font-medium text-gray-700 mb-1">Description</label>
-    <textarea
-      formControlName="description"
-      class="w-full px-3 py-2 border border-gray-300 rounded-md"
-    ></textarea>
-  </div>
+      <!-- Error Message -->
+      <div *ngIf="error$ | async as error" class="mb-6 p-4 bg-red-500/10 border border-red-500/30 rounded-lg text-red-400 backdrop-blur">
+        <div class="flex items-center">
+          <span class="mr-3">⚠️</span>
+          <span>{{ error }}</span>
+        </div>
+      </div>
 
-  <div class="grid grid-cols-2 gap-4 mb-4">
-    <div>
-      <label class="block text-sm font-medium text-gray-700 mb-1">Price</label>
-      <input
-        type="number"
-        step="0.01"
-        formControlName="price"
-        class="w-full px-3 py-2 border border-gray-300 rounded-md"
-      />
+      <form [formGroup]="form" (ngSubmit)="onSubmit()" class="space-y-6">
+        <!-- Product Name -->
+        <div>
+          <label class="block text-white font-semibold mb-2">Product Name *</label>
+          <input
+            type="text"
+            formControlName="name"
+            placeholder="Enter product name"
+            class="w-full px-4 py-2 bg-black/50 border border-purple-500/30 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-purple-500/50 focus:ring-2 focus:ring-purple-500/20 transition-all duration-200"
+          />
+          <div *ngIf="form.get('name')?.errors && form.get('name')?.touched" class="mt-2 text-red-400 text-sm flex items-center">
+            <span class="mr-2">❌</span>
+            Name is required
+          </div>
+        </div>
+
+        <!-- Description -->
+        <div>
+          <label class="block text-white font-semibold mb-2">Description</label>
+          <textarea
+            formControlName="description"
+            placeholder="Enter product description (optional)"
+            rows="4"
+            class="w-full px-4 py-2 bg-black/50 border border-purple-500/30 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-purple-500/50 focus:ring-2 focus:ring-purple-500/20 transition-all duration-200 resize-none"
+          ></textarea>
+        </div>
+
+        <!-- Price and Quantity Grid -->
+        <div class="grid md:grid-cols-2 gap-6">
+          <!-- Price -->
+          <div>
+            <label class="block text-white font-semibold mb-2">Price ($) *</label>
+            <input
+              type="number"
+              formControlName="price"
+              placeholder="0.00"
+              step="0.01"
+              min="0"
+              class="w-full px-4 py-2 bg-black/50 border border-purple-500/30 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-purple-500/50 focus:ring-2 focus:ring-purple-500/20 transition-all duration-200"
+            />
+            <div *ngIf="form.get('price')?.errors && form.get('price')?.touched" class="mt-2 text-red-400 text-sm flex items-center">
+              <span class="mr-2">❌</span>
+              Price is required and must be valid
+            </div>
+          </div>
+
+          <!-- Quantity -->
+          <div>
+            <label class="block text-white font-semibold mb-2">Quantity *</label>
+            <input
+              type="number"
+              formControlName="quantity"
+              placeholder="0"
+              min="0"
+              class="w-full px-4 py-2 bg-black/50 border border-purple-500/30 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-purple-500/50 focus:ring-2 focus:ring-purple-500/20 transition-all duration-200"
+            />
+            <div *ngIf="form.get('quantity')?.errors && form.get('quantity')?.touched" class="mt-2 text-red-400 text-sm flex items-center">
+              <span class="mr-2">❌</span>
+              Quantity is required and must be valid
+            </div>
+          </div>
+        </div>
+
+        <!-- Buttons -->
+        <div class="flex gap-4 pt-6 border-t border-purple-500/20">
+          <button
+            type="submit"
+            [disabled]="(loading$ | async) || !form.valid"
+            class="flex-1 px-6 py-3 bg-gradient-to-r from-purple-500 to-pink-600 text-white rounded-lg font-semibold hover:shadow-lg hover:shadow-purple-500/50 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200"
+          >
+            <span *ngIf="loading$ | async" class="inline-block mr-2">⏳</span>
+            {{ (loading$ | async) ? 'Saving...' : ((selectedProduct$ | async) ? 'Update Product' : 'Create Product') }}
+          </button>
+          <button
+            type="button"
+            routerLink="/products"
+            class="px-6 py-3 border border-purple-500/30 text-purple-400 rounded-lg font-semibold hover:bg-purple-500/10 transition-colors duration-200"
+          >
+            Cancel
+          </button>
+        </div>
+      </form>
     </div>
-    <div>
-      <label class="block text-sm font-medium text-gray-700 mb-1">Quantity</label>
-      <input
-        type="number"
-        formControlName="quantity"
-        class="w-full px-3 py-2 border border-gray-300 rounded-md"
-      />
-    </div>
   </div>
+</div>
 
-  <button
-    type="submit"
-    [disabled]="loading"
-    class="w-full bg-blue-600 text-white py-2 rounded-md hover:bg-blue-700 disabled:opacity-50"
-  >
-    {{ loading ? 'Saving...' : (product ? 'Update Product' : 'Create Product') }}
-  </button>
-</form>
 ```
 
 Edit `frontend-angular/src/app/components/product-list/product-list.component.ts`:
 
 ```typescript
-import { Component, EventEmitter, Input, Output } from '@angular/core';
+import { Component, OnInit, Optional } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { Product, ProductService } from '../../services/product.service';
+import { RouterModule, Router } from '@angular/router';
+import { Store } from '@ngrx/store';
+import { Observable } from 'rxjs';
+import { Product } from '../../services/product.service';
+import * as ProductActions from '../../store/product.actions';
+import { selectAllProducts, selectLoadingState, selectErrorState } from '../../store/product.selectors';
 
 @Component({
   selector: 'app-product-list',
-  templateUrl: './product-list.component.html',
-  styleUrls: ['./product-list.component.css'],
   standalone: true,
-  imports: [CommonModule]
+  imports: [CommonModule, RouterModule],
+  templateUrl: './product-list.component.html',
+  styleUrl: './product-list.component.css'
 })
-export class ProductListComponent {
-  @Input() products: Product[] = [];
-  @Output() edit = new EventEmitter<Product>();
-  @Output() refresh = new EventEmitter<void>();
+export class ProductListComponent implements OnInit {
+  products$: Observable<Product[]>;
+  loading$: Observable<boolean>;
+  error$: Observable<string | null>;
 
-  constructor(private productService: ProductService) {}
-
-  onEdit(product: Product) {
-    this.edit.emit(product);
+  constructor(
+    private store: Store,
+    @Optional() private router: Router | null
+  ) {
+    this.products$ = this.store.select(selectAllProducts);
+    this.loading$ = this.store.select(selectLoadingState);
+    this.error$ = this.store.select(selectErrorState);
   }
 
-  onDelete(id: number) {
-    if (!confirm('Are you sure?')) return;
+  ngOnInit(): void {
+    this.store.dispatch(ProductActions.loadProducts());
+  }
 
-    this.productService.delete(id).subscribe({
-      next: () => this.refresh.emit(),
-      error: (err) => alert(err.error?.message || 'Delete failed')
-    });
+  onEdit(product: Product): void {
+    if (this.router) {
+      this.router.navigate(['/products/edit', product.id]);
+    }
+  }
+
+  onDelete(id: number): void {
+    if (!confirm('Are you sure?')) return;
+    this.store.dispatch(ProductActions.deleteProduct({ id }));
   }
 }
+
 ```
 
 Edit `frontend-angular/src/app/components/product-list/product-list.component.html`:
 
 ```html
-<div class="overflow-x-auto">
-  <table class="w-full border-collapse">
-    <thead>
-      <tr class="bg-gray-100">
-        <th class="border p-2 text-left">Name</th>
-        <th class="border p-2 text-left">Description</th>
-        <th class="border p-2 text-right">Price</th>
-        <th class="border p-2 text-right">Quantity</th>
-        <th class="border p-2">Actions</th>
-      </tr>
-    </thead>
-    <tbody>
-      <tr *ngFor="let product of products" class="hover:bg-gray-50">
-        <td class="border p-2">{{ product.name }}</td>
-        <td class="border p-2">{{ product.description }}</td>
-        <td class="border p-2 text-right">${{ product.price }}</td>
-        <td class="border p-2 text-right">{{ product.quantity }}</td>
-        <td class="border p-2 text-center">
-          <button
-            (click)="onEdit(product)"
-            class="text-blue-600 hover:underline mr-2"
-          >
-            Edit
-          </button>
-          <button
-            (click)="onDelete(product.id)"
-            class="text-red-600 hover:underline"
-          >
-            Delete
-          </button>
-        </td>
-      </tr>
-    </tbody>
-  </table>
+<div class="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 py-12">
+  <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+    <!-- Header -->
+    <div class="mb-8">
+      <h1 class="text-4xl font-bold text-white mb-2">Product Catalog</h1>
+      <p class="text-gray-400">Manage all your products in one place</p>
+    </div>
+
+    <!-- Create Button -->
+    <div class="mb-8">
+      <a routerLink="/products/create" class="inline-flex items-center px-6 py-3 bg-gradient-to-r from-purple-500 to-pink-600 text-white rounded-lg font-semibold hover:shadow-lg hover:shadow-purple-500/50 transition-all duration-200 transform hover:scale-105">
+        <span class="mr-2">✨</span>
+        Create New Product
+      </a>
+    </div>
+
+    <!-- Error Message -->
+    <div *ngIf="error$ | async as error" class="mb-6 p-4 bg-red-500/10 border border-red-500/30 rounded-lg text-red-400 backdrop-blur">
+      <div class="flex items-center">
+        <span class="mr-3">⚠️</span>
+        <span>{{ error }}</span>
+      </div>
+    </div>
+
+    <!-- Loading State -->
+    <div *ngIf="loading$ | async" class="flex items-center justify-center py-12">
+      <div class="text-center">
+        <div class="inline-block">
+          <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-purple-500"></div>
+        </div>
+        <p class="text-gray-400 mt-4">Loading products...</p>
+      </div>
+    </div>
+
+    <!-- Products Table -->
+    <div *ngIf="(loading$ | async) === false && (products$ | async) as products" class="bg-black/40 backdrop-blur border border-purple-500/20 rounded-lg overflow-hidden">
+      <div class="overflow-x-auto">
+        <table class="w-full">
+          <thead>
+            <tr class="border-b border-purple-500/20 bg-black/60">
+              <th class="px-6 py-4 text-left text-sm font-semibold text-gray-300">Product Name</th>
+              <th class="px-6 py-4 text-left text-sm font-semibold text-gray-300">Description</th>
+              <th class="px-6 py-4 text-right text-sm font-semibold text-gray-300">Price</th>
+              <th class="px-6 py-4 text-right text-sm font-semibold text-gray-300">Quantity</th>
+              <th class="px-6 py-4 text-center text-sm font-semibold text-gray-300">Actions</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-purple-500/10">
+            <tr *ngFor="let product of products" class="hover:bg-purple-500/5 transition-colors duration-150">
+              <td class="px-6 py-4 text-white font-medium">{{ product.name }}</td>
+              <td class="px-6 py-4 text-gray-400 text-sm">{{ product.description || '—' }}</td>
+              <td class="px-6 py-4 text-right">
+                <span class="inline-block px-3 py-1 bg-green-500/20 text-green-400 rounded-full text-sm font-semibold">${{ product.price.toFixed(2) }}</span>
+              </td>
+              <td class="px-6 py-4 text-right">
+                <span class="inline-block px-3 py-1 bg-blue-500/20 text-blue-400 rounded-full text-sm font-semibold">{{ product.quantity }}</span>
+              </td>
+              <td class="px-6 py-4 text-center">
+                <div class="flex items-center justify-center space-x-2">
+                  <button
+                    (click)="onEdit(product)"
+                    class="px-3 py-1 bg-blue-500/20 text-blue-400 rounded hover:bg-blue-500/30 transition-colors duration-200 text-sm font-semibold"
+                  >
+                    ✏️ Edit
+                  </button>
+                  <button
+                    (click)="onDelete(product.id)"
+                    class="px-3 py-1 bg-red-500/20 text-red-400 rounded hover:bg-red-500/30 transition-colors duration-200 text-sm font-semibold"
+                  >
+                    🗑️ Delete
+                  </button>
+                </div>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Empty State -->
+    <div *ngIf="(loading$ | async) === false && (products$ | async)?.length === 0" class="text-center py-12">
+      <div class="text-6xl mb-4">📦</div>
+      <h3 class="text-2xl font-bold text-white mb-2">No Products Found</h3>
+      <p class="text-gray-400 mb-6">Start by creating your first product</p>
+      <a routerLink="/products/create" class="inline-flex items-center px-6 py-3 bg-gradient-to-r from-purple-500 to-pink-600 text-white rounded-lg font-semibold hover:shadow-lg hover:shadow-purple-500/50 transition-all duration-200">
+        <span class="mr-2">✨</span>
+        Create Product
+      </a>
+    </div>
+  </div>
 </div>
+
 ```
 
 ### 4.5 Update App Component
@@ -1236,54 +2282,58 @@ Edit `frontend-angular/src/app/components/product-list/product-list.component.ht
 Edit `frontend-angular/src/app/app.component.ts`:
 
 ```typescript
-import { Component, OnInit } from '@angular/core';
-import { HttpClientModule } from '@angular/common/http';
+import { Component } from '@angular/core';
+import { RouterOutlet, RouterLink } from '@angular/router';
 import { CommonModule } from '@angular/common';
-import { Product, ProductService } from './services/product.service';
-import { ProductFormComponent } from './components/product-form/product-form.component';
-import { ProductListComponent } from './components/product-list/product-list.component';
 
 @Component({
   selector: 'app-root',
-  templateUrl: './app.component.html',
-  styleUrls: ['./app.component.css'],
   standalone: true,
-  imports: [CommonModule, HttpClientModule, ProductFormComponent, ProductListComponent]
+  imports: [RouterOutlet, RouterLink, CommonModule],
+  template: `
+        <div class="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900">
+      <!-- Navigation Bar -->
+      <nav class="backdrop-blur-md bg-black/30 border-b border-purple-500/20 sticky top-0 z-50">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div class="flex justify-between items-center h-16">
+            <div class="flex items-center space-x-3">
+              <div class="w-10 h-10 bg-gradient-to-br from-purple-400 to-pink-600 rounded-lg flex items-center justify-center">
+                <span class="text-white font-bold text-lg">P</span>
+              </div>
+              <h1 class="text-2xl font-bold bg-gradient-to-r from-purple-400 via-pink-400 to-purple-400 bg-clip-text text-transparent">ProductHub</h1>
+            </div>
+            <div class="hidden md:flex space-x-8">
+              <a routerLink="/products" class="text-gray-300 hover:text-white transition-colors duration-200">Products</a>
+              <a href="#features" class="text-gray-300 hover:text-white transition-colors duration-200">Features</a>
+              <a href="#about" class="text-gray-300 hover:text-white transition-colors duration-200">About</a>
+            </div>
+          </div>
+        </div>
+      </nav>
+
+
+
+
+
+
+
+      <!-- Router Outlet -->
+      <router-outlet></router-outlet>
+
+      <!-- Footer -->
+      <footer class="border-t border-purple-500/20 bg-black/40 backdrop-blur mt-20">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12 text-center">
+          <p class="text-gray-400">© 2024 ProductHub. Built with ❤️ using modern technologies.</p>
+        </div>
+      </footer>
+    </div>
+  `,
+  styleUrl: './app.component.css'
 })
-export class AppComponent implements OnInit {
-  title = 'Product CRUD';
-  products: Product[] = [];
-  selectedProduct?: Product;
-  loading = true;
-  error = '';
-
-  constructor(private productService: ProductService) {}
-
-  ngOnInit() {
-    this.loadProducts();
-  }
-
-  loadProducts() {
-    this.loading = true;
-    this.productService.getAll().subscribe({
-      next: (response) => {
-        this.products = response.data || [];
-        this.error = '';
-      },
-      error: (err) => {
-        this.error = err.error?.message || 'Failed to load products';
-      },
-      complete: () => {
-        this.loading = false;
-      }
-    });
-  }
-
-  onFormSuccess() {
-    this.selectedProduct = undefined;
-    this.loadProducts();
-  }
+export class AppComponent {
+  title = 'ProductHub';
 }
+
 ```
 
 Edit `frontend-angular/src/app/app.component.html`:
@@ -1302,22 +2352,58 @@ Edit `frontend-angular/src/app/app.component.html`:
       </div>
 
       <div class="md:col-span-2">
-        <div *ngIf="error" class="mb-4 p-3 bg-red-100 text-red-700 rounded">
-          {{ error }}
-        </div>
-        <div *ngIf="loading">Loading...</div>
         <app-product-list
-          *ngIf="!loading"
-          [products]="products"
-          (edit)="selectedProduct = $event"
-          (refresh)="loadProducts()"
+          [refreshTrigger]="refreshTrigger"
+          (edit)="onEditProduct($event)"
         ></app-product-list>
       </div>
     </div>
   </div>
 </div>
-```
 
+
+
+
+```
+Edit `frontend-angular\tsconfig.json`:
+
+```html
+/* To learn more about this file see: https://angular.io/config/tsconfig. */
+{
+  "compileOnSave": false,
+  "compilerOptions": {
+    "outDir": "./dist/out-tsc",
+    "strict": true,
+    "noImplicitOverride": true,
+    "noPropertyAccessFromIndexSignature": true,
+    "noImplicitReturns": true,
+    "noFallthroughCasesInSwitch": true,
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+    "sourceMap": true,
+    "declaration": false,
+    "experimentalDecorators": true,
+    "moduleResolution": "node",
+    "importHelpers": true,
+    "target": "ES2022",
+    "module": "ES2022",
+    "useDefineForClassFields": false,
+    "lib": [
+      "ES2022",
+      "dom"
+    ]
+  },
+  "angularCompilerOptions": {
+    "enableI18nLegacyMessageIdFormat": false,
+    "strictInjectionParameters": true,
+    "strictInputAccessModifiers": true,
+    "strictTemplates": true
+  }
+}
+
+
+
+```
 ---
 
 ## Step 5: Root Configuration Files
@@ -1495,3 +2581,4 @@ ng test
 
 **Created**: Using this comprehensive project creation guide
 **Last Updated**: November 2025
+
