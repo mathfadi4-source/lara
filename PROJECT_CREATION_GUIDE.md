@@ -592,9 +592,9 @@ cd frontend-react
 
 ```bash
 # Install Tailwind CSS
-npm install -D tailwindcss postcss autoprefixer
+npm install -D tailwindcss@3 postcss autoprefixer
 npx tailwindcss init -p
-npm i zustand
+npm install zustand
 npm install -D @tailwindcss/postcss
 
 # Dependencies are already included:
@@ -627,7 +627,7 @@ Edit `frontend-react/postcss.config.js`:
 ```js
 module.exports = {
   plugins: {
-    '@tailwindcss/postcss': {},
+    tailwindcss: {},
     autoprefixer: {},
   },
 }
@@ -2555,6 +2555,7 @@ ng test
 
 **Created**: Using this comprehensive project creation guide  
 **Last Updated**: November 2024
+
 
 
 
