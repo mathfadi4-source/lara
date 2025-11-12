@@ -8,18 +8,18 @@ This guide documents how to create a new full-stack CRUD application following t
 
 Before starting, ensure you have:
 
-- **Node.js** v20.17.0+ ([download](https://nodejs.org))
-- **npm** v10.8.2+ (comes with Node.js)
-- **PHP** 8.2+ ([download](https://www.php.net/downloads))
+- **Node.js** v18+ ([download](https://nodejs.org))
+- **npm** v9+ (comes with Node.js)
+- **PHP** 8.1+ ([download](https://www.php.net/downloads))
 - **Composer** ([download](https://getcomposer.org/download))
 - **Git** ([download](https://git-scm.com/downloads))
 
 ### Verify Installation
 
 ```bash
-node --version          # v20.17.0 or higher
-npm --version           # v10.8.2 or higher
-php --version           # 8.2 or higher
+node --version          # v18.0.0 or higher
+npm --version           # v9.0.0 or higher
+php --version           # 8.1 or higher
 composer --version      # Latest version
 git --version           # Any recent version
 ```
@@ -32,9 +32,9 @@ Create the following directory structure:
 
 ```
 project-name/
-├── backend/                    # Laravel 12 API
-├── frontend-react/             # React 19 Frontend
-├── frontend-angular/           # Angular 17 Frontend
+├── backend/                    # Laravel 11+ API
+├── frontend-react/             # React 18+ Frontend
+├── frontend-angular/           # Angular 17+ Frontend
 ├── .gitignore                  # Git ignore rules
 ├── README.md                   # Project documentation
 ├── SETUP.md                    # Setup instructions
@@ -58,7 +58,7 @@ git init
 
 ---
 
-## Step 2: Create Backend (Laravel 12)
+## Step 2: Create Backend (Laravel 11+)
 
 ### 2.1 Create Laravel Project
 
@@ -577,7 +577,7 @@ cd ..
 
 ---
 
-## Step 3: Create Frontend (React 19)
+## Step 3: Create Frontend (React 18+)
 
 ### 3.1 Create React App
 
@@ -597,7 +597,7 @@ npx tailwindcss init -p
 npm i zustand
 
 # Dependencies are already included:
-# - react@^19.2.0
+# - react@^18.2.0
 # - typescript@^4.9.5
 # - react-scripts@5.0.1
 
@@ -1072,7 +1072,7 @@ export default App;
 
 ---
 
-## Step 4: Create Frontend (Angular 17)
+## Step 4: Create Frontend (Angular 17+)
 
 ### 4.1 Create Angular App
 
@@ -1087,22 +1087,21 @@ cd frontend-angular
 ### 4.2 Install Dependencies
 
 ```bash
+# Install NgRx for state management
+npm install @ngrx/store @ngrx/effects @ngrx/entity @ngrx/store-devtools
+
 # Install Tailwind CSS
-npm install @ngrx/store@19 @ngrx/effects@19 @ngrx/entity@19 @ngrx/store-devtools@19
+npm install -D tailwindcss postcss autoprefixer
+npx tailwindcss init -p
 
-npm install tailwindcss @tailwindcss/postcss postcss --force
-.postcssrc.json
 
-{
-  "plugins": {
-    "@tailwindcss/postcss": {}
-  }
-}
+```
 
-Add an @import to ./src/styles.css that imports Tailwind CSS.
-@import "tailwindcss";
+### 4.2 Configure Tailwind CSS
 
-tailwind.config.js
+Edit `frontend-angular/tailwind.config.js`:
+
+```javascript
 /** @type {import('tailwindcss').Config} */
 module.exports = {
   content: [
@@ -1113,14 +1112,20 @@ module.exports = {
   },
   plugins: [],
 }
-
-
 ```
 
-### 4.3 Create API Service
+Edit `frontend-angular/src/styles.css`:
+
+```css
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+```
+
+### 4.3 Configure Application
 
 
-create `frontend-angular\src\app\app.routes.ts`:
+Create `frontend-angular/src/app/app.routes.ts`:
 
 ```typescript
 import { Routes } from '@angular/router';
@@ -1138,10 +1143,7 @@ export const appRoutes: Routes = [
 ];
 
 ```
-### 4.3 Create API Service
-
-
-create `frontend-angular\src\app\app.config.ts`:
+Create `frontend-angular/src/app/app.config.ts`:
 
 ```typescript
 import { ApplicationConfig } from '@angular/core';
@@ -1166,10 +1168,7 @@ export const appConfig: ApplicationConfig = {
 
 
 ```
-### 4.3 Create API Service
-
-
-create `frontend-angular\postcss.config.js`:
+Create `frontend-angular/postcss.config.js`:
 
 ```typescript
 module.exports = {
@@ -1182,10 +1181,9 @@ module.exports = {
 
 
 ```
-### 4.3 Create API Service
+### 4.4 Configure Server (Optional SSR)
 
-
-create `frontend-angular\server.ts`:
+Create `frontend-angular/server.ts`:
 
 ```typescript
 import 'zone.js/node';
@@ -1241,10 +1239,9 @@ run();
 
 
 ```
-### 4.3 Create API Service
+### 4.5 Update Main App Component
 
-
-create `frontend-angular\src\app\app.component.ts`:
+Create `frontend-angular/src/app/app.component.ts`:
 
 ```typescript
 import { Component } from '@angular/core';
@@ -1348,17 +1345,17 @@ import { CommonModule } from '@angular/common';
         <div class="grid md:grid-cols-4 gap-6">
           <div class="bg-black/40 backdrop-blur border border-purple-500/20 rounded-lg p-6 text-center hover:border-purple-500/50 transition-colors duration-200">
             <div class="text-4xl mb-3">🚀</div>
-            <h4 class="text-white font-bold mb-2">Laravel 12</h4>
+            <h4 class="text-white font-bold mb-2">Laravel 11+</h4>
             <p class="text-gray-400 text-sm">Powerful backend API with SOLID principles</p>
           </div>
           <div class="bg-black/40 backdrop-blur border border-purple-500/20 rounded-lg p-6 text-center hover:border-purple-500/50 transition-colors duration-200">
             <div class="text-4xl mb-3">⚛️</div>
-            <h4 class="text-white font-bold mb-2">React 18</h4>
+            <h4 class="text-white font-bold mb-2">React 18+</h4>
             <p class="text-gray-400 text-sm">Modern frontend with Zustand state management</p>
           </div>
           <div class="bg-black/40 backdrop-blur border border-purple-500/20 rounded-lg p-6 text-center hover:border-purple-500/50 transition-colors duration-200">
             <div class="text-4xl mb-3">🅰️</div>
-            <h4 class="text-white font-bold mb-2">Angular 17</h4>
+            <h4 class="text-white font-bold mb-2">Angular 17+</h4>
             <p class="text-gray-400 text-sm">Advanced frontend with NgRx store</p>
           </div>
           <div class="bg-black/40 backdrop-blur border border-purple-500/20 rounded-lg p-6 text-center hover:border-purple-500/50 transition-colors duration-200">
@@ -1389,14 +1386,11 @@ export class AppComponent {
 
 
 ```
-### 4.3 Create API Service
+### 4.6 Create NgRx Store Structure
 
+#### 4.6.1 Product Actions
 
-
-### 4.3 Create API Service
-
-
-Edit `frontend-angular\src\app\store\product.actions.ts`:
+Create `frontend-angular/src/app/store/product.actions.ts`:
 
 ```typescript
 import { createAction, props } from '@ngrx/store';
@@ -1489,10 +1483,9 @@ export const clearProductSelection = createAction(
 
 
 ```
-### 4.3 Create API Service
+#### 4.6.2 Product Effects
 
-
-Edit `frontend-angular\src\app\store\product.effects.ts`:
+Create `frontend-angular/src/app/store/product.effects.ts`:
 
 ```typescript
 import { Injectable, inject } from '@angular/core';
@@ -1626,10 +1619,9 @@ export class ProductEffects {
 
 
 ```
-### 4.3 Create API Service
+#### 4.6.3 Product Reducer
 
-
-Edit `frontend-angular\src\app\store\product.reducer.ts`:
+Create `frontend-angular/src/app/store/product.reducer.ts`:
 
 ```typescript
 import { createReducer, on } from '@ngrx/store';
@@ -1750,10 +1742,9 @@ export const productReducer = createReducer(
 
 
 ```
-### 4.3 Create API Service
+#### 4.6.4 Product Selectors
 
-
-Edit `frontend-angular\src\app\store\product.selectors.ts`:
+Create `frontend-angular/src/app/store/product.selectors.ts`:
 
 ```typescript
 
@@ -1801,9 +1792,10 @@ export const selectProductsWithLoading = createSelector(
 
 
 ```
-### 4.3 Create API Service
+### 4.7 Create API Service
 
 ```bash
+cd frontend-angular
 ng generate service services/product
 ```
 
@@ -1860,10 +1852,9 @@ export class ProductService {
 }
 
 ```
-### 4.3 Create API Service
+### 4.8 Create Product Routes
 
-
-Edit `frontend-angular\src\app\products\products.routes.ts`:
+Create `frontend-angular/src/app/products/products.routes.ts`:
 
 ```typescript
 import { Routes } from '@angular/router';
@@ -1888,9 +1879,10 @@ export const productsRoutes: Routes = [
 
 
 ```
-### 4.4 Create Components
+### 4.9 Create Components
 
 ```bash
+cd frontend-angular
 ng generate component components/product-form
 ng generate component components/product-list
 ```
@@ -2277,7 +2269,7 @@ Edit `frontend-angular/src/app/components/product-list/product-list.component.ht
 
 ```
 
-### 4.5 Update App Component
+#### 4.9.2 Update App Component for Routing
 
 Edit `frontend-angular/src/app/app.component.ts`:
 
@@ -2336,39 +2328,11 @@ export class AppComponent {
 
 ```
 
-Edit `frontend-angular/src/app/app.component.html`:
+### 4.10 Configure TypeScript
 
-```html
-<div class="min-h-screen bg-gray-100">
-  <div class="max-w-6xl mx-auto p-8">
-    <h1 class="text-4xl font-bold mb-8">{{ title }}</h1>
+Edit `frontend-angular/tsconfig.json`:
 
-    <div class="grid grid-cols-1 md:grid-cols-3 gap-8 mb-8">
-      <div class="md:col-span-1">
-        <app-product-form
-          [product]="selectedProduct"
-          (success)="onFormSuccess()"
-        ></app-product-form>
-      </div>
-
-      <div class="md:col-span-2">
-        <app-product-list
-          [refreshTrigger]="refreshTrigger"
-          (edit)="onEditProduct($event)"
-        ></app-product-list>
-      </div>
-    </div>
-  </div>
-</div>
-
-
-
-
-```
-Edit `frontend-angular\tsconfig.json`:
-
-```html
-/* To learn more about this file see: https://angular.io/config/tsconfig. */
+```json
 {
   "compileOnSave": false,
   "compilerOptions": {
@@ -2400,9 +2364,6 @@ Edit `frontend-angular\tsconfig.json`:
     "strictTemplates": true
   }
 }
-
-
-
 ```
 ---
 
@@ -2462,9 +2423,9 @@ See [SETUP.md](./SETUP.md) for detailed setup instructions.
 
 ## Architecture
 
-- **Backend**: Laravel 12 API (SOLID principles, Repository pattern)
-- **Frontend React**: React 19 with TypeScript
-- **Frontend Angular**: Angular 17 with standalone components
+- **Backend**: Laravel 11+ API (SOLID principles, Repository pattern)
+- **Frontend React**: React 18+ with TypeScript and Zustand
+- **Frontend Angular**: Angular 17+ with standalone components and NgRx
 
 All components use Tailwind CSS and RESTful API communication.
 ```
@@ -2579,6 +2540,6 @@ ng test
 
 ---
 
-**Created**: Using this comprehensive project creation guide
-**Last Updated**: November 2025
+**Created**: Using this comprehensive project creation guide  
+**Last Updated**: November 2024
 
