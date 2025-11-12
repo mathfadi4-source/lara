@@ -2151,7 +2151,7 @@ Edit `frontend-angular/src/app/components/product-list/product-list.component.ht
               <td class="px-6 py-4 text-white font-medium">{{ product.name }}</td>
               <td class="px-6 py-4 text-gray-400 text-sm">{{ product.description || '—' }}</td>
               <td class="px-6 py-4 text-right">
-                <span class="inline-block px-3 py-1 bg-green-500/20 text-green-400 rounded-full text-sm font-semibold">${{ product.price.toFixed(2) }}</span>
+                <span class="inline-block px-3 py-1 bg-green-500/20 text-green-400 rounded-full text-sm font-semibold">${{ (+product.price).toFixed(2) }}</span>
               </td>
               <td class="px-6 py-4 text-right">
                 <span class="inline-block px-3 py-1 bg-blue-500/20 text-blue-400 rounded-full text-sm font-semibold">{{ product.quantity }}</span>
@@ -2466,6 +2466,7 @@ ng test
 
 **Created**: Using this comprehensive project creation guide  
 **Last Updated**: November 2024
+
 
 
 
