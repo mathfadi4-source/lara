@@ -621,6 +621,17 @@ export default {
   plugins: [],
 }
 ```
+Edit `frontend-react/postcss.config.js`:
+
+```js
+module.exports = {
+  plugins: {
+    tailwindcss: {},
+    autoprefixer: {},
+  },
+}
+
+```
 
 Edit `frontend-react/src/index.css`:
 
@@ -2542,4 +2553,5 @@ ng test
 
 **Created**: Using this comprehensive project creation guide  
 **Last Updated**: November 2024
+
 
