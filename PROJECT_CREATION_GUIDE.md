@@ -1104,7 +1104,7 @@ cd frontend-angular
 npm install @ngrx/store@19 @ngrx/effects@19 @ngrx/entity@19 @ngrx/store-devtools@19
 
 # Install Tailwind CSS
-npm install -D tailwindcss postcss autoprefixer
+npm install -D tailwindcss@3 postcss autoprefixer
 npx tailwindcss init -p
 
 
@@ -2555,6 +2555,7 @@ ng test
 
 **Created**: Using this comprehensive project creation guide  
 **Last Updated**: November 2024
+
 
 
 
