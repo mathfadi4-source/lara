@@ -1099,7 +1099,7 @@ cd frontend-angular
 
 ```bash
 # Install NgRx for state management
-npm install @ngrx/store @ngrx/effects @ngrx/entity @ngrx/store-devtools
+npm install @ngrx/store@19 @ngrx/effects@19 @ngrx/entity@19 @ngrx/store-devtools@19
 
 # Install Tailwind CSS
 npm install -D tailwindcss postcss autoprefixer
@@ -2553,5 +2553,6 @@ ng test
 
 **Created**: Using this comprehensive project creation guide  
 **Last Updated**: November 2024
+
 
 
