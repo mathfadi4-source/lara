@@ -1127,7 +1127,7 @@ cd frontend-angular
 npm install @ngrx/store@19 @ngrx/effects@19 @ngrx/entity@19 @ngrx/store-devtools@19
 
 # Install Tailwind CSS
-npm install -D tailwindcss@3 postcss autoprefixer
+npm install -D tailwindcss postcss autoprefixer
 npx tailwindcss init -p
 
 
@@ -1135,27 +1135,23 @@ npx tailwindcss init -p
 
 ### 4.2 Configure Tailwind CSS
 
-Edit `frontend-angular/tailwind.config.js`:
 
-```javascript
-/** @type {import('tailwindcss').Config} */
-module.exports = {
-  content: [
-    "./src/**/*.{html,ts}",
-  ],
-  theme: {
-    extend: {},
-  },
-  plugins: [],
-}
-```
 
 Edit `frontend-angular/src/styles.css`:
 
 ```css
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
+```
+Edit `frontend-angular\postcss.config.js`:
+
+```css
+module.exports = {
+  plugins: {
+    '@tailwindcss/postcss': {},
+    autoprefixer: {},
+  },
+}
+
 ```
 
 ### 4.3 Configure Application
@@ -1183,7 +1179,6 @@ Create `frontend-angular/src/app/app.config.ts`:
 
 ```typescript
 import { ApplicationConfig } from '@angular/core';
-import { provideClientHydration } from '@angular/platform-browser';
 import { provideHttpClient } from '@angular/common/http';
 import { provideRouter } from '@angular/router';
 import { provideStore } from '@ngrx/store';
@@ -1195,7 +1190,6 @@ import { appRoutes } from './app.routes';
 export const appConfig: ApplicationConfig = {
   providers: [
     provideRouter(appRoutes),
-    provideClientHydration(),
     provideHttpClient(),
     provideStore({ products: productReducer }),
     provideEffects([ProductEffects])
@@ -1203,20 +1197,7 @@ export const appConfig: ApplicationConfig = {
 };
 
 
-```
-Create `frontend-angular/postcss.config.js`:
 
-```typescript
-module.exports = {
-  plugins: {
-    tailwindcss: {},
-    autoprefixer: {},
-  },
-}
-
-
-
-```
 ### 4.4 Configure Server (Optional SSR)
 
 Create `frontend-angular/server.ts`:
@@ -1269,11 +1250,6 @@ function run(): void {
 
 run();
 
-
-
-
-
-
 ```
 ### 4.5 Update Main App Component
 
@@ -1281,24 +1257,41 @@ Create `frontend-angular/src/app/app.component.ts`:
 
 ```typescript
 import { Component } from '@angular/core';
-import { RouterOutlet } from '@angular/router';
+import { RouterOutlet, RouterLink } from '@angular/router';
 import { CommonModule } from '@angular/common';
 
 @Component({
   selector: 'app-root',
   standalone: true,
-  imports: [RouterOutlet, CommonModule],
+  imports: [RouterOutlet, RouterLink, CommonModule],
   template: `
-       <div class="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900">
+    <div class="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900">
+      <!-- Navigation Bar -->
+      <nav class="backdrop-blur-md bg-black/30 border-b border-purple-500/20 sticky top-0 z-50">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div class="flex justify-between items-center h-16">
+            <div class="flex items-center space-x-3">
+              <div class="w-10 h-10 bg-gradient-to-br from-purple-400 to-pink-600 rounded-lg flex items-center justify-center">
+                <span class="text-white font-bold text-lg">P</span>
+              </div>
+              <h1 class="text-2xl font-bold bg-gradient-to-r from-purple-400 via-pink-400 to-purple-400 bg-clip-text text-transparent">ProductHub</h1>
+            </div>
+            <div class="hidden md:flex space-x-8">
+              <a routerLink="/products" class="text-gray-300 hover:text-white transition-colors duration-200">Products</a>
+            </div>
+          </div>
+        </div>
+      </nav>
+
+
+
+
+
+
+
       <!-- Router Outlet -->
       <router-outlet></router-outlet>
 
-      <!-- Footer -->
-      <footer class="border-t border-purple-500/20 bg-black/40 backdrop-blur mt-20">
-        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12 text-center">
-          <p class="text-gray-400">© 2024 ProductHub. Built with ❤️ using modern technologies.</p>
-        </div>
-      </footer>
     </div>
   `,
   styleUrl: './app.component.css'
@@ -1306,17 +1299,6 @@ import { CommonModule } from '@angular/common';
 export class AppComponent {
   title = 'ProductHub';
 }
-
-
-
-  `,
-  styleUrl: './app.component.css'
-})
-export class AppComponent {
-  title = 'ProductHub';
-}
-
-
 
 ```
 ### 4.6 Create NgRx Store Structure
@@ -1943,16 +1925,16 @@ export class ProductFormComponent implements OnInit, OnDestroy {
 Edit `frontend-angular/src/app/components/product-form/product-form.component.html`:
 
 ```html
-<div class="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 py-12">
+<div class="min-h-screen bg-gray-50 py-12">
   <div class="max-w-2xl mx-auto px-4 sm:px-6 lg:px-8">
     <!-- Back Button -->
-    <a routerLink="/products" class="inline-flex items-center text-purple-400 hover:text-purple-300 mb-8 transition-colors duration-200">
+    <a routerLink="/products" class="inline-flex items-center text-black-400 hover:text-black-300 mb-8 transition-colors duration-200">
       <span class="mr-2">←</span>
       Back to Products
     </a>
 
     <!-- Form Card -->
-    <div class="bg-black/40 backdrop-blur border border-purple-500/20 rounded-lg p-8">
+    <div class="bg-black backdrop-blur border border-purple-500/20 rounded-lg p-8">
       <h2 class="text-3xl font-bold text-white mb-2">
         {{ (selectedProduct$ | async) ? '✏️ Edit Product' : '✨ Create New Product' }}
       </h2>
@@ -2052,6 +2034,7 @@ Edit `frontend-angular/src/app/components/product-form/product-form.component.ht
   </div>
 </div>
 
+
 ```
 
 Edit `frontend-angular/src/app/components/product-list/product-list.component.ts`:
@@ -2108,78 +2091,94 @@ export class ProductListComponent implements OnInit {
 Edit `frontend-angular/src/app/components/product-list/product-list.component.html`:
 
 ```html
-<div class="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 py-12">
+<div class="min-h-screen bg-gray-50 py-12">
   <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
     <!-- Header -->
     <div class="mb-8">
-      <h1 class="text-4xl font-bold text-white mb-2">Product Catalog</h1>
-      <p class="text-gray-400">Manage all your products in one place</p>
+      <h1 class="text-3xl font-bold text-gray-900 mb-2">Product Catalog</h1>
+      <p class="text-gray-600">Manage all your products in one place</p>
     </div>
 
     <!-- Create Button -->
     <div class="mb-8">
-      <a routerLink="/products/create" class="inline-flex items-center px-6 py-3 bg-gradient-to-r from-purple-500 to-pink-600 text-white rounded-lg font-semibold hover:shadow-lg hover:shadow-purple-500/50 transition-all duration-200 transform hover:scale-105">
-        <span class="mr-2">✨</span>
-        Create New Product
+      <a
+        routerLink="/products/create"
+        class="inline-flex items-center px-6 py-3 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700 transition-all duration-200"
+      >
+        <span class="mr-2">＋</span>
+        Create Product
       </a>
     </div>
 
     <!-- Error Message -->
-    <div *ngIf="error$ | async as error" class="mb-6 p-4 bg-red-500/10 border border-red-500/30 rounded-lg text-red-400 backdrop-blur">
-      <div class="flex items-center">
-        <span class="mr-3">⚠️</span>
-        <span>{{ error }}</span>
-      </div>
+    <div
+      *ngIf="error$ | async as error"
+      class="mb-6 p-4 bg-red-100 border border-red-300 text-red-700 rounded-lg"
+    >
+      ⚠️ {{ error }}
     </div>
 
     <!-- Loading State -->
     <div *ngIf="loading$ | async" class="flex items-center justify-center py-12">
-      <div class="text-center">
-        <div class="inline-block">
-          <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-purple-500"></div>
-        </div>
-        <p class="text-gray-400 mt-4">Loading products...</p>
-      </div>
+      <div class="text-center text-gray-500">Loading products...</div>
     </div>
 
     <!-- Products Table -->
-    <div *ngIf="(loading$ | async) === false && (products$ | async) as products" class="bg-black/40 backdrop-blur border border-purple-500/20 rounded-lg overflow-hidden">
+    <div
+      *ngIf="(loading$ | async) === false && (products$ | async) as products"
+      class="bg-white border border-gray-200 rounded-lg shadow-sm overflow-hidden"
+    >
       <div class="overflow-x-auto">
         <table class="w-full">
           <thead>
-            <tr class="border-b border-purple-500/20 bg-black/60">
-              <th class="px-6 py-4 text-left text-sm font-semibold text-gray-300">Product Name</th>
-              <th class="px-6 py-4 text-left text-sm font-semibold text-gray-300">Description</th>
-              <th class="px-6 py-4 text-right text-sm font-semibold text-gray-300">Price</th>
-              <th class="px-6 py-4 text-right text-sm font-semibold text-gray-300">Quantity</th>
-              <th class="px-6 py-4 text-center text-sm font-semibold text-gray-300">Actions</th>
+            <tr class="bg-gray-100 border-b border-gray-200">
+              <th class="px-6 py-4 text-left text-sm font-semibold text-gray-700">
+                Product Name
+              </th>
+              <th class="px-6 py-4 text-left text-sm font-semibold text-gray-700">
+                Description
+              </th>
+              <th class="px-6 py-4 text-right text-sm font-semibold text-gray-700">
+                Price
+              </th>
+              <th class="px-6 py-4 text-right text-sm font-semibold text-gray-700">
+                Quantity
+              </th>
+              <th class="px-6 py-4 text-center text-sm font-semibold text-gray-700">
+                Actions
+              </th>
             </tr>
           </thead>
-          <tbody class="divide-y divide-purple-500/10">
-            <tr *ngFor="let product of products" class="hover:bg-purple-500/5 transition-colors duration-150">
-              <td class="px-6 py-4 text-white font-medium">{{ product.name }}</td>
-              <td class="px-6 py-4 text-gray-400 text-sm">{{ product.description || '—' }}</td>
-              <td class="px-6 py-4 text-right">
-                <span class="inline-block px-3 py-1 bg-green-500/20 text-green-400 rounded-full text-sm font-semibold">${{ (+product.price).toFixed(2) }}</span>
+          <tbody class="divide-y divide-gray-100">
+            <tr
+              *ngFor="let product of products"
+              class="hover:bg-gray-50 transition-colors duration-150"
+            >
+              <td class="px-6 py-4 text-gray-900 font-medium">
+                {{ product.name }}
               </td>
-              <td class="px-6 py-4 text-right">
-                <span class="inline-block px-3 py-1 bg-blue-500/20 text-blue-400 rounded-full text-sm font-semibold">{{ product.quantity }}</span>
+              <td class="px-6 py-4 text-gray-600 text-sm">
+                {{ product.description || '—' }}
               </td>
-              <td class="px-6 py-4 text-center">
-                <div class="flex items-center justify-center space-x-2">
-                  <button
-                    (click)="onEdit(product)"
-                    class="px-3 py-1 bg-blue-500/20 text-blue-400 rounded hover:bg-blue-500/30 transition-colors duration-200 text-sm font-semibold"
-                  >
-                    ✏️ Edit
-                  </button>
-                  <button
-                    (click)="onDelete(product.id)"
-                    class="px-3 py-1 bg-red-500/20 text-red-400 rounded hover:bg-red-500/30 transition-colors duration-200 text-sm font-semibold"
-                  >
-                    🗑️ Delete
-                  </button>
-                </div>
+              <td class="px-6 py-4 text-right text-gray-700">
+                ${{ product.price || 0 | number: '1.2-2' }}
+              </td>
+              <td class="px-6 py-4 text-right text-gray-700">
+                {{ product.quantity }}
+              </td>
+              <td class="px-6 py-4 text-center space-x-2">
+                <button
+                  (click)="onEdit(product)"
+                  class="text-blue-600 hover:underline text-sm font-semibold"
+                >
+                  Edit
+                </button>
+                <button
+                  (click)="onDelete(product.id)"
+                  class="text-red-600 hover:underline text-sm font-semibold"
+                >
+                  Delete
+                </button>
               </td>
             </tr>
           </tbody>
@@ -2188,78 +2187,30 @@ Edit `frontend-angular/src/app/components/product-list/product-list.component.ht
     </div>
 
     <!-- Empty State -->
-    <div *ngIf="(loading$ | async) === false && (products$ | async)?.length === 0" class="text-center py-12">
-      <div class="text-6xl mb-4">📦</div>
-      <h3 class="text-2xl font-bold text-white mb-2">No Products Found</h3>
-      <p class="text-gray-400 mb-6">Start by creating your first product</p>
-      <a routerLink="/products/create" class="inline-flex items-center px-6 py-3 bg-gradient-to-r from-purple-500 to-pink-600 text-white rounded-lg font-semibold hover:shadow-lg hover:shadow-purple-500/50 transition-all duration-200">
-        <span class="mr-2">✨</span>
+    <div
+      *ngIf="(loading$ | async) === false && (products$ | async)?.length === 0"
+      class="text-center py-12 text-gray-600"
+    >
+      <div class="text-5xl mb-3">📦</div>
+      <h3 class="text-2xl font-bold text-gray-900 mb-2">
+        No Products Found
+      </h3>
+      <p class="mb-6">Start by creating your first product</p>
+      <a
+        routerLink="/products/create"
+        class="inline-flex items-center px-6 py-3 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700 transition-all duration-200"
+      >
+        <span class="mr-2">＋</span>
         Create Product
       </a>
     </div>
   </div>
 </div>
 
-```
-
-#### 4.9.2 Update App Component for Routing
-
-Edit `frontend-angular/src/app/app.component.ts`:
-
-```typescript
-import { Component } from '@angular/core';
-import { RouterOutlet, RouterLink } from '@angular/router';
-import { CommonModule } from '@angular/common';
-
-@Component({
-  selector: 'app-root',
-  standalone: true,
-  imports: [RouterOutlet, RouterLink, CommonModule],
-  template: `
-        <div class="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900">
-      <!-- Navigation Bar -->
-      <nav class="backdrop-blur-md bg-black/30 border-b border-purple-500/20 sticky top-0 z-50">
-        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div class="flex justify-between items-center h-16">
-            <div class="flex items-center space-x-3">
-              <div class="w-10 h-10 bg-gradient-to-br from-purple-400 to-pink-600 rounded-lg flex items-center justify-center">
-                <span class="text-white font-bold text-lg">P</span>
-              </div>
-              <h1 class="text-2xl font-bold bg-gradient-to-r from-purple-400 via-pink-400 to-purple-400 bg-clip-text text-transparent">ProductHub</h1>
-            </div>
-            <div class="hidden md:flex space-x-8">
-              <a routerLink="/products" class="text-gray-300 hover:text-white transition-colors duration-200">Products</a>
-              <a href="#features" class="text-gray-300 hover:text-white transition-colors duration-200">Features</a>
-              <a href="#about" class="text-gray-300 hover:text-white transition-colors duration-200">About</a>
-            </div>
-          </div>
-        </div>
-      </nav>
-
-
-
-
-
-
-
-      <!-- Router Outlet -->
-      <router-outlet></router-outlet>
-
-      <!-- Footer -->
-      <footer class="border-t border-purple-500/20 bg-black/40 backdrop-blur mt-20">
-        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12 text-center">
-          <p class="text-gray-400">© 2024 ProductHub. Built with ❤️ using modern technologies.</p>
-        </div>
-      </footer>
-    </div>
-  `,
-  styleUrl: './app.component.css'
-})
-export class AppComponent {
-  title = 'ProductHub';
-}
 
 ```
+
+
 
 ### 4.10 Configure TypeScript
 
@@ -2475,6 +2426,7 @@ ng test
 
 **Created**: Using this comprehensive project creation guide  
 **Last Updated**: November 2024
+
 
 
 
